@@ -49,9 +49,9 @@ func NewKeytab() Keytab {
 func (kt *Keytab) toByteArray() []byte {
 	buffer := new(bytes.Buffer)
 	packer := binpacker.NewPacker(binary.BigEndian, buffer)
+
 	// First byte is always set to 5
 	packer.PushUint8(uint8(5))
-	// Second byte hold version
 	packer.PushUint8(kt.Version)
 	for _, entry := range kt.Entries {
 		entryBytes := entry.toByteArray()
@@ -83,18 +83,14 @@ func (entry *entry) toByteArray() []byte {
 func (principal *principal) toByteArray() []byte {
 	buffer := new(bytes.Buffer)
 	packer := binpacker.NewPacker(binary.BigEndian, buffer)
-	// write number of components, int16
-	packer.PushInt16(principal.NumComponents)
-	// write realm length, int16
-	packer.PushInt16(int16(len(principal.Realm)))
-	// write value, bytes
-	packer.PushString(principal.Realm)
 
+	packer.PushInt16(principal.NumComponents)
+	packer.PushInt16(int16(len(principal.Realm)))
+	packer.PushString(principal.Realm)
 	for _, component := range principal.Components {
 		packer.PushInt16(int16(len(component)))
 		packer.PushString(component)
 	}
-
 	packer.PushInt32(principal.NameType)
 
 	return buffer.Bytes()
