@@ -27,7 +27,7 @@ func TestParse(t *testing.T) {
 	assert.Equal(t, "0c61039f010b2fbb88fe449fbf262477", hex.EncodeToString(kt.Entries[0].Key.KeyValue), "Key material not as expected")
 	assert.Equal(t, int16(1), kt.Entries[0].Principal.NumComponents, "Number of components in principal not as expected")
 	assert.Equal(t, int32(1), kt.Entries[0].Principal.NameType, "Name type of principal not as expected")
-	assert.Equal(t, "EXAMPLE.COM", kt.Entries[0].Principal.Realm.Value, "Realm of principal not as expected")
+	assert.Equal(t, "EXAMPLE.COM", kt.Entries[0].Principal.Realm, "Realm of principal not as expected")
 	assert.Equal(t, "user", kt.Entries[0].Principal.Components[0].Value, "Component in principal not as expected")
 }
 

@@ -32,7 +32,7 @@ type KeytabEntry struct {
 // Keytab entry principal struct.
 type KeytabPrincipal struct {
 	NumComponents int16
-	Realm         Realm
+	Realm         string
 	Components    []Component
 	NameType      int32
 }
@@ -40,10 +40,6 @@ type KeytabPrincipal struct {
 type Data struct {
 	Length int16
 	Value  string
-}
-
-type Realm struct {
-	Data
 }
 
 type Component struct {
@@ -99,9 +95,9 @@ func (principal *KeytabPrincipal) toByteArray() []byte {
 	// write number of components, int16
 	packer.PushInt16(principal.NumComponents)
 	// write realm length, int16
-	packer.PushInt16(principal.Realm.Length)
+	packer.PushInt16(int16(len(principal.Realm)))
 	// write value, bytes
-	packer.PushString(principal.Realm.Value)
+	packer.PushString(principal.Realm)
 
 	for _, component := range principal.Components {
 		packer.PushInt16(component.Length)
@@ -114,7 +110,7 @@ func (principal *KeytabPrincipal) toByteArray() []byte {
 }
 
 // GetEncryptionKey returns the EncryptionKey from the Keytab for the newest entry with the required kvno, etype and matching principal.
-func (kt *Keytab) GetEncryptionKey(nameString []string, realm Realm, kvno, etype int) (types.EncryptionKey, error) {
+func (kt *Keytab) GetEncryptionKey(nameString []string, realm string, kvno, etype int) (types.EncryptionKey, error) {
 	var key types.EncryptionKey
 	var t time.Time
 	for _, k := range kt.Entries {
@@ -157,7 +153,7 @@ func newPrincipal() KeytabPrincipal {
 	var c []Component
 	return KeytabPrincipal{
 		NumComponents: 0,
-		Realm:         Realm{},
+		Realm:         "",
 		Components:    c,
 		NameType:      0,
 	}
@@ -252,12 +248,7 @@ func parsePrincipal(b []byte, p *int, kt *Keytab, ke *KeytabEntry, e *binary.Byt
 		ke.Principal.NumComponents--
 	}
 	lenRealm := readInt16(b, p, e)
-	ke.Principal.Realm = Realm{
-		Data{
-			Length: lenRealm,
-			Value:  string(readBytes(b, p, int(lenRealm), e)),
-		},
-	}
+	ke.Principal.Realm = string(readBytes(b, p, int(lenRealm), e))
 	for i := 0; i < int(ke.Principal.NumComponents); i++ {
 		l := readInt16(b, p, e)
 		value := string(readBytes(b, p, int(l), e))
