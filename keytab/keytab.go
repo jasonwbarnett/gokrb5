@@ -205,8 +205,7 @@ func Parse(b []byte) (kt Keytab, err error) {
 			ke.Key.KeyType = int(readInt16(eb, &p, &endian))
 			kl := int(readInt16(eb, &p, &endian))
 			ke.Key.KeyValue = readBytes(eb, &p, kl, &endian)
-
-			// The 32-bit key version overrides the 8-bit key version.
+			//The 32-bit key version overrides the 8-bit key version.
 			// To determine if it is present, the implementation must check that at least 4 bytes remain in the record after the other fields are read,
 			// and that the value of the 32-bit integer contained in those bytes is non-zero.
 			if len(eb)-p >= 4 {
