@@ -64,35 +64,13 @@ func (kt *Keytab) toByteArray() []byte {
 	packer := binpacker.NewPacker(binary.BigEndian, buffer)
 	// First byte is always set to 5
 	packer.PushUint8(uint8(5))
-	// Second byte represents version
+	// Second byte hold version
 	packer.PushUint8(kt.Version)
 	for _, entry := range kt.Entries {
-		/*
-
-			# Keytab
-			- pre_version, uint8 (always 5)
-			- version, uint8 (1 or 2)
-			# entries, for each
-				- entry length, int32
-				# entry
-					# principle
-						- count of components, int16
-						# realm
-							- length, int16
-							- value, byte[]
-					  # componentents, for each
-							# component
-								- length, int16
-								- value, int16
-						- name type, int32
-		*/
 		entryBytes := entry.toByteArray()
 		packer.PushInt32(int32(len(entryBytes)))
 		packer.PushBytes(entryBytes)
 	}
-
-	// Last 32-bit record should be 0 indicating the end of the Keytab file
-	//packer.PushInt32(0)
 
 	return buffer.Bytes()
 }
