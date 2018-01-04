@@ -212,7 +212,6 @@ func Parse(b []byte) (kt Keytab, err error) {
 				// The 32-bit key may be present
 				ke.KVNO = uint32(readInt32(eb, &p, &endian))
 			}
-
 			// Add the entry to the keytab
 			kt.Entries = append(kt.Entries, ke)
 		}
