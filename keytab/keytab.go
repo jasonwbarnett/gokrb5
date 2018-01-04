@@ -17,12 +17,12 @@ import (
 // Keytab struct.
 type Keytab struct {
 	Version uint8
-	Entries []KeytabEntry
+	Entries []entry
 }
 
 // Keytab entry struct.
-type KeytabEntry struct {
-	Principal KeytabPrincipal
+type entry struct {
+	Principal principal
 	Timestamp time.Time
 	KVNO8     uint8
 	Key       types.EncryptionKey
@@ -30,7 +30,7 @@ type KeytabEntry struct {
 }
 
 // Keytab entry principal struct.
-type KeytabPrincipal struct {
+type principal struct {
 	NumComponents int16
 	Realm         string
 	Components    []string
@@ -39,7 +39,7 @@ type KeytabPrincipal struct {
 
 // NewKeytab creates new, empty Keytab type.
 func NewKeytab() Keytab {
-	var e []KeytabEntry
+	var e []entry
 	return Keytab{
 		Version: 0,
 		Entries: e,
@@ -62,7 +62,7 @@ func (kt *Keytab) toByteArray() []byte {
 	return buffer.Bytes()
 }
 
-func (entry *KeytabEntry) toByteArray() []byte {
+func (entry *entry) toByteArray() []byte {
 	buffer := new(bytes.Buffer)
 	packer := binpacker.NewPacker(binary.BigEndian, buffer)
 
@@ -80,7 +80,7 @@ func (entry *KeytabEntry) toByteArray() []byte {
 	return buffer.Bytes()
 }
 
-func (principal *KeytabPrincipal) toByteArray() []byte {
+func (principal *principal) toByteArray() []byte {
 	buffer := new(bytes.Buffer)
 	packer := binpacker.NewPacker(binary.BigEndian, buffer)
 	// write number of components, int16
@@ -125,9 +125,9 @@ func (kt *Keytab) GetEncryptionKey(nameString []string, realm string, kvno, etyp
 }
 
 // Create a new Keytab entry.
-func newKeytabEntry() KeytabEntry {
+func newKeytabEntry() entry {
 	var b []byte
-	return KeytabEntry{
+	return entry{
 		Principal: newPrincipal(),
 		Timestamp: time.Time{},
 		KVNO8:     0,
@@ -140,9 +140,9 @@ func newKeytabEntry() KeytabEntry {
 }
 
 // Create a new principal.
-func newPrincipal() KeytabPrincipal {
+func newPrincipal() principal {
 	var c []string
-	return KeytabPrincipal{
+	return principal{
 		NumComponents: 0,
 		Realm:         "",
 		Components:    c,
@@ -232,7 +232,7 @@ func Parse(b []byte) (kt Keytab, err error) {
 }
 
 // Parse the Keytab bytes of a principal into a Keytab entry's principal.
-func parsePrincipal(b []byte, p *int, kt *Keytab, ke *KeytabEntry, e *binary.ByteOrder) (err error) {
+func parsePrincipal(b []byte, p *int, kt *Keytab, ke *entry, e *binary.ByteOrder) (err error) {
 	ke.Principal.NumComponents = readInt16(b, p, e)
 	if kt.Version == 1 {
 		//In version 1 the number of components includes the realm. Minus 1 to make consistent with version 2
