@@ -6,21 +6,23 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"gopkg.in/jcmturner/gokrb5.v2/types"
 	"io/ioutil"
 	"time"
 	"unsafe"
+
+	"github.com/zhuangsirui/binpacker"
+	"gopkg.in/jcmturner/gokrb5.v2/types"
 )
 
 // Keytab struct.
 type Keytab struct {
-	Version uint16
-	Entries []entry
+	Version uint8
+	Entries []KeytabEntry
 }
 
 // Keytab entry struct.
-type entry struct {
-	Principal principal
+type KeytabEntry struct {
+	Principal KeytabPrincipal
 	Timestamp time.Time
 	KVNO8     uint8
 	Key       types.EncryptionKey
@@ -28,31 +30,120 @@ type entry struct {
 }
 
 // Keytab entry principal struct.
-type principal struct {
+type KeytabPrincipal struct {
 	NumComponents int16
-	Realm         string
-	Components    []string
+	Realm         Realm
+	Components    []Component
 	NameType      int32
+}
+
+type Data struct {
+	Length int16
+	Value  string
+}
+
+type Realm struct {
+	Data
+}
+
+type Component struct {
+	Data
 }
 
 // NewKeytab creates new, empty Keytab type.
 func NewKeytab() Keytab {
-	var e []entry
+	var e []KeytabEntry
 	return Keytab{
 		Version: 0,
 		Entries: e,
 	}
 }
 
+func (kt *Keytab) toByteArray() []byte {
+	buffer := new(bytes.Buffer)
+	packer := binpacker.NewPacker(binary.BigEndian, buffer)
+	// First byte is always set to 5
+	packer.PushUint8(uint8(5))
+	// Second byte represents version
+	packer.PushUint8(kt.Version)
+	for _, entry := range kt.Entries {
+		/*
+
+			# Keytab
+			- pre_version, uint8 (always 5)
+			- version, uint8 (1 or 2)
+			# entries, for each
+				- entry length, int32
+				# entry
+					# principle
+						- count of components, int16
+						# realm
+							- length, int16
+							- value, byte[]
+					  # componentents, for each
+							# component
+								- length, int16
+								- value, int16
+						- name type, int32
+		*/
+		entryBytes := entry.toByteArray()
+		packer.PushInt32(int32(len(entryBytes)))
+		packer.PushBytes(entryBytes)
+	}
+
+	// Last 32-bit record should be 0 indicating the end of the Keytab file
+	//packer.PushInt32(0)
+
+	return buffer.Bytes()
+}
+
+func (entry *KeytabEntry) toByteArray() []byte {
+	buffer := new(bytes.Buffer)
+	packer := binpacker.NewPacker(binary.BigEndian, buffer)
+
+	packer.PushBytes(entry.Principal.toByteArray())
+	packer.PushInt32(int32(entry.Timestamp.Unix()))
+	packer.PushUint8(entry.KVNO8)
+	packer.PushInt16(int16(entry.Key.KeyType))
+	packer.PushInt16(int16(len(entry.Key.KeyValue)))
+	packer.PushBytes(entry.Key.KeyValue)
+	// This is only in KRB5 1.14 and later, not sure if we want to add it or not
+	if entry.KVNO != 0 {
+		packer.PushUint32(entry.KVNO)
+	}
+
+	return buffer.Bytes()
+}
+
+func (principal *KeytabPrincipal) toByteArray() []byte {
+	buffer := new(bytes.Buffer)
+	packer := binpacker.NewPacker(binary.BigEndian, buffer)
+	// write number of components, int16
+	packer.PushInt16(principal.NumComponents)
+	// write realm length, int16
+	packer.PushInt16(principal.Realm.Length)
+	// write value, bytes
+	packer.PushString(principal.Realm.Value)
+
+	for _, component := range principal.Components {
+		packer.PushInt16(component.Length)
+		packer.PushString(component.Value)
+	}
+
+	packer.PushInt32(principal.NameType)
+
+	return buffer.Bytes()
+}
+
 // GetEncryptionKey returns the EncryptionKey from the Keytab for the newest entry with the required kvno, etype and matching principal.
-func (kt *Keytab) GetEncryptionKey(nameString []string, realm string, kvno, etype int) (types.EncryptionKey, error) {
+func (kt *Keytab) GetEncryptionKey(nameString []string, realm Realm, kvno, etype int) (types.EncryptionKey, error) {
 	var key types.EncryptionKey
 	var t time.Time
 	for _, k := range kt.Entries {
 		if k.Principal.Realm == realm && len(k.Principal.Components) == len(nameString) && int(k.Key.KeyType) == etype && (int(k.KVNO) == kvno || kvno == 0) && k.Timestamp.After(t) {
 			p := true
-			for i, n := range k.Principal.Components {
-				if nameString[i] != n {
+			for i, comp := range k.Principal.Components {
+				if nameString[i] != comp.Value {
 					p = false
 					break
 				}
@@ -69,9 +160,9 @@ func (kt *Keytab) GetEncryptionKey(nameString []string, realm string, kvno, etyp
 }
 
 // Create a new Keytab entry.
-func newKeytabEntry() entry {
+func newKeytabEntry() KeytabEntry {
 	var b []byte
-	return entry{
+	return KeytabEntry{
 		Principal: newPrincipal(),
 		Timestamp: time.Time{},
 		KVNO8:     0,
@@ -84,11 +175,11 @@ func newKeytabEntry() entry {
 }
 
 // Create a new principal.
-func newPrincipal() principal {
-	var c []string
-	return principal{
+func newPrincipal() KeytabPrincipal {
+	var c []Component
+	return KeytabPrincipal{
 		NumComponents: 0,
-		Realm:         "",
+		Realm:         Realm{},
 		Components:    c,
 		NameType:      0,
 	}
@@ -105,18 +196,23 @@ func Load(ktPath string) (kt Keytab, err error) {
 
 // Parse byte slice of Keytab data into Keytab type.
 func Parse(b []byte) (kt Keytab, err error) {
+	// n tracks position in the byte array
+	n := 0
+
 	//The first byte of the file always has the value 5
 	if int8(b[0]) != 5 {
 		err = errors.New("Invalid keytab data. First byte does not equal 5")
 		return
 	}
+	n++
 	//Get keytab version
 	//The second byte contains the version number (1 or 2)
-	kt.Version = uint16(b[1])
+	kt.Version = uint8(b[1])
 	if kt.Version != 1 && kt.Version != 2 {
 		err = errors.New("Invalid keytab data. Keytab version is neither 1 nor 2")
 		return
 	}
+	n++
 	//Version 1 of the file format uses native byte order for integer representations. Version 2 always uses big-endian byte order
 	var endian binary.ByteOrder
 	endian = binary.BigEndian
@@ -129,8 +225,6 @@ func Parse(b []byte) (kt Keytab, err error) {
 		A negative length indicates a zero-filled hole whose size is the inverse of the length.
 		A length of 0 indicates the end of the file.
 	*/
-	// n tracks position in the byte array
-	n := 2
 	l := readInt32(b, &n, &endian)
 	for l != 0 {
 		if l < 0 {
@@ -150,17 +244,15 @@ func Parse(b []byte) (kt Keytab, err error) {
 			ke.Key.KeyType = int(readInt16(eb, &p, &endian))
 			kl := int(readInt16(eb, &p, &endian))
 			ke.Key.KeyValue = readBytes(eb, &p, kl, &endian)
-			//The 32-bit key version overrides the 8-bit key version.
+
+			// The 32-bit key version overrides the 8-bit key version.
 			// To determine if it is present, the implementation must check that at least 4 bytes remain in the record after the other fields are read,
 			// and that the value of the 32-bit integer contained in those bytes is non-zero.
 			if len(eb)-p >= 4 {
 				// The 32-bit key may be present
 				ke.KVNO = uint32(readInt32(eb, &p, &endian))
 			}
-			if ke.KVNO == 0 {
-				// Handles if the value from the last 4 bytes was zero and also if there are not the 4 bytes present. Makes sense to put the same value here as KVNO8
-				ke.KVNO = uint32(ke.KVNO8)
-			}
+
 			// Add the entry to the keytab
 			kt.Entries = append(kt.Entries, ke)
 		}
@@ -175,17 +267,29 @@ func Parse(b []byte) (kt Keytab, err error) {
 }
 
 // Parse the Keytab bytes of a principal into a Keytab entry's principal.
-func parsePrincipal(b []byte, p *int, kt *Keytab, ke *entry, e *binary.ByteOrder) (err error) {
+func parsePrincipal(b []byte, p *int, kt *Keytab, ke *KeytabEntry, e *binary.ByteOrder) (err error) {
 	ke.Principal.NumComponents = readInt16(b, p, e)
 	if kt.Version == 1 {
 		//In version 1 the number of components includes the realm. Minus 1 to make consistent with version 2
 		ke.Principal.NumComponents--
 	}
 	lenRealm := readInt16(b, p, e)
-	ke.Principal.Realm = string(readBytes(b, p, int(lenRealm), e))
+	ke.Principal.Realm = Realm{
+		Data{
+			Length: lenRealm,
+			Value:  string(readBytes(b, p, int(lenRealm), e)),
+		},
+	}
 	for i := 0; i < int(ke.Principal.NumComponents); i++ {
 		l := readInt16(b, p, e)
-		ke.Principal.Components = append(ke.Principal.Components, string(readBytes(b, p, int(l), e)))
+		value := string(readBytes(b, p, int(l), e))
+		cmpnt := Component{
+			Data{
+				Length: l,
+				Value:  value,
+			},
+		}
+		ke.Principal.Components = append(ke.Principal.Components, cmpnt)
 	}
 	if kt.Version != 1 {
 		//Name Type is omitted in version 1

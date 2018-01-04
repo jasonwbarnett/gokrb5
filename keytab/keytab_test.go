@@ -2,9 +2,10 @@ package keytab
 
 import (
 	"encoding/hex"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 //Keytab data generated from ktutil
@@ -16,14 +17,26 @@ func TestParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error parsing keytab data: %v\n", err)
 	}
-	assert.Equal(t, uint16(2), kt.Version, "Keytab version not as expected")
-	assert.Equal(t, uint32(1), kt.Entries[0].KVNO, "KVNO not as expected")
+	assert.Equal(t, uint8(2), kt.Version, "Keytab version not as expected")
+	// The keytab above is missing the 32-bit KVNO, so it makes no sense for us to
+	// add test for it.
+	assert.Equal(t, uint32(0), kt.Entries[0].KVNO, "KVNO not as expected")
 	assert.Equal(t, uint8(1), kt.Entries[0].KVNO8, "KVNO8 not as expected")
 	assert.Equal(t, time.Unix(1483384877, 0), kt.Entries[0].Timestamp, "Timestamp not as expected")
 	assert.Equal(t, 23, kt.Entries[0].Key.KeyType, "Key's EType not as expected")
 	assert.Equal(t, "0c61039f010b2fbb88fe449fbf262477", hex.EncodeToString(kt.Entries[0].Key.KeyValue), "Key material not as expected")
 	assert.Equal(t, int16(1), kt.Entries[0].Principal.NumComponents, "Number of components in principal not as expected")
 	assert.Equal(t, int32(1), kt.Entries[0].Principal.NameType, "Name type of principal not as expected")
-	assert.Equal(t, "EXAMPLE.COM", kt.Entries[0].Principal.Realm, "Realm of principal not as expected")
-	assert.Equal(t, "user", kt.Entries[0].Principal.Components[0], "Component in principal not as expected")
+	assert.Equal(t, "EXAMPLE.COM", kt.Entries[0].Principal.Realm.Value, "Realm of principal not as expected")
+	assert.Equal(t, "user", kt.Entries[0].Principal.Components[0].Value, "Component in principal not as expected")
+}
+
+func TestToByteArray(t *testing.T) {
+	dat, _ := hex.DecodeString(keytabDataHexStr)
+	kt, err := Parse(dat)
+	if err != nil {
+		t.Fatalf("Error parsing keytab data: %v\n", err)
+	}
+
+	assert.Equal(t, dat, kt.toByteArray(), "Converting Keytab to byte array is not as expected.")
 }
