@@ -33,17 +33,8 @@ type KeytabEntry struct {
 type KeytabPrincipal struct {
 	NumComponents int16
 	Realm         string
-	Components    []Component
+	Components    []string
 	NameType      int32
-}
-
-type Data struct {
-	Length int16
-	Value  string
-}
-
-type Component struct {
-	Data
 }
 
 // NewKeytab creates new, empty Keytab type.
@@ -100,8 +91,8 @@ func (principal *KeytabPrincipal) toByteArray() []byte {
 	packer.PushString(principal.Realm)
 
 	for _, component := range principal.Components {
-		packer.PushInt16(component.Length)
-		packer.PushString(component.Value)
+		packer.PushInt16(int16(len(component)))
+		packer.PushString(component)
 	}
 
 	packer.PushInt32(principal.NameType)
@@ -117,7 +108,7 @@ func (kt *Keytab) GetEncryptionKey(nameString []string, realm string, kvno, etyp
 		if k.Principal.Realm == realm && len(k.Principal.Components) == len(nameString) && int(k.Key.KeyType) == etype && (int(k.KVNO) == kvno || kvno == 0) && k.Timestamp.After(t) {
 			p := true
 			for i, comp := range k.Principal.Components {
-				if nameString[i] != comp.Value {
+				if nameString[i] != comp {
 					p = false
 					break
 				}
@@ -150,7 +141,7 @@ func newKeytabEntry() KeytabEntry {
 
 // Create a new principal.
 func newPrincipal() KeytabPrincipal {
-	var c []Component
+	var c []string
 	return KeytabPrincipal{
 		NumComponents: 0,
 		Realm:         "",
@@ -251,14 +242,8 @@ func parsePrincipal(b []byte, p *int, kt *Keytab, ke *KeytabEntry, e *binary.Byt
 	ke.Principal.Realm = string(readBytes(b, p, int(lenRealm), e))
 	for i := 0; i < int(ke.Principal.NumComponents); i++ {
 		l := readInt16(b, p, e)
-		value := string(readBytes(b, p, int(l), e))
-		cmpnt := Component{
-			Data{
-				Length: l,
-				Value:  value,
-			},
-		}
-		ke.Principal.Components = append(ke.Principal.Components, cmpnt)
+		component := string(readBytes(b, p, int(l), e))
+		ke.Principal.Components = append(ke.Principal.Components, component)
 	}
 	if kt.Version != 1 {
 		//Name Type is omitted in version 1
