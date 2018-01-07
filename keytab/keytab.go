@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -94,6 +95,10 @@ func (principal *principal) Bytes() []byte {
 	packer.PushInt32(principal.NameType)
 
 	return buffer.Bytes()
+}
+
+func (principal *principal) Name() string {
+	return strings.Join(principal.Components, "/")
 }
 
 // The 32-bit key version overrides the 8-bit key version.
